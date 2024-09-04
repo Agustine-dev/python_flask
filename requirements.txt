@@ -1,0 +1,8 @@
+Flask
+Flask-JWT-Extended
+Flask-RESTful
+Flask-Cors
+Flask-SQLAlchemy
+Werkzeug
+python-dotenv==1.0.0
+
