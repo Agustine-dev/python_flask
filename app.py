@@ -44,6 +44,16 @@ def validate_phone(phone):
         return False
     return True
 
+def getById(id, table):
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM {} WHERE id=?".format(table),(id,)).fetchone()
+    conn.close()
+
+    if row is None:
+        abort(404) 
+    return row
+
 @app.route('/')
 def index():   
     return jsonify(message="You requested an empty resource")
@@ -57,7 +67,7 @@ def register():
 
         if not data:
             error="Invalid Content Parsed"
-            return jsonify(err=error)
+            return jsonify(err=error),404
         elif data['name'] == '':
             error="Username not Defined"
             return jsonify(err=error),400
@@ -157,35 +167,16 @@ def protected():
 	current_user = get_jwt_identity()
 	return jsonify(username=current_user[0]),200
 
-def getRestaunt(id):
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
-    rest = conn.execute("SELECT * FROM restraunts WHERE id=?",(id,)).fetchone()
-    conn.close()
 
-    if rest is None:
-        abort(404) 
-    return rest
 
 @app.route('/api/restraunts', methods=["POST", "GET"])
 def restraunts():
     if request.method == "GET":
-        conn = sqlite3.connect('database.db')
-        conn.row_factory = sqlite3.Row
-        rests = conn.execute('SELECT * FROM restraunts').fetchall()
+        conn = get_db_connection()
+        cur = conn.execute('SELECT * FROM restraunts').fetchall()
         # convert Row objects to true Tuples
-        # rests = [tuple(row) for row in rests]
+        rests = [tuple(row) for row in cur]
 
-        # convert row to dictionary
-        for i in rests:
-            rest = {}
-            rest["id"] = i["id"]
-            rest["name"] = i["name"]
-            rest["address"] = i["address"]
-            rest["phone"] = i["phone"]
-            rests.append(rest)
-
-        print("This is rests", rests)
         if rests is None:
             return jsonify(msg="Add Restraunt")
 
@@ -236,12 +227,12 @@ def restraunts():
 
 @app.route("/api/restraunt/<int:id>", methods=['GET','POST',"PUT","DELETE"])
 def fetch_restaunt(id):
-    rest = getRestaunt(id)
+    rest = getById(id, "restraunts")
+    print("Restaunt", rest)
     if request.method == "GET":
         return jsonify(name=rest["name"],address=rest['address'],phone="phone")
     elif request.method == "POST":
         data = request.get_json()
-
         name=data['name']
         address = data['address']
         phone=data['phone']
@@ -321,17 +312,25 @@ def order():
 		
 @app.route("/api/couriers",methods=["GET"])
 def couriers():
-	if request.method == 'GET':
-		conn = get_db_connection()
-		cur = conn.execute('SELECT * FROM drivers').fetchall()
-		num = len(cur)
-		if num == 0:
-			return jsonify(message="This resource is not available, zero drivers")
-		else:
-			return jsonify(data="This was it, {}".format(cur))
-        
-		
+    if request.method == 'GET':
+        conn = get_db_connection()
+        cur = conn.execute('SELECT * FROM drivers').fetchall()
+        num = len(cur)   
+        drivers = [tuple(row) for row in cur]
+        if num == 0:
+            conn.close()
+            return jsonify(message="This resource is not available, zero drivers")
+        else:
+            conn.close()
+            return jsonify(message="success",data=drivers)
 
+
+@app.route("/api/courier/<int:id>", methods=["GET", "POST"])
+def getCourier(id):
+    if request.method == 'GET':
+        driver = getById(id, "drivers")
+        return jsonify(name=driver["name"],email=driver["email"],phone=driver["phone"],location=driver["location"]) 
+		
 @app.route("/api/couriers/register", methods=["POST"])
 def regcourier():
     if request.method == 'POST':
@@ -349,20 +348,27 @@ def regcourier():
             return jsonify(error=error),500
         
         if validate_mail(dmail) and validate_phone(dphone):
-            user_id = conn.execute("SELECT id FROM users WHERE email= ?",(dmail,)).fetchall()
-            user_id = tuple(user_id)
-            print("This was inputed below",user_id)
-            # orders = conn.execute("SELECT * FROM orders WHERE user_id=?",(user_id[0],)).fetchall()
-            # orders = [tuple(row) for row in orders]
-            return jsonify("{}, {}".format(dmail, dphone))
+            user_id = conn.execute("SELECT * FROM drivers WHERE email = ?",(dmail,)).fetchall()
+            user_phone = conn.execute("SELECT * FROM drivers WHERE phone = ?", (dphone,)).fetchall()
+
+            print("user email", user_id)
+
+            if user_id:
+                abort(404)
+            
+            if user_phone:
+                abort(404)
+
+            conn.execute("INSERT INTO drivers (email, phone, location, name) VALUES (?, ?, ?, ?)", (dmail, dphone, dlocation, dname,))
+            conn.commit()
+            conn.close()
+            return jsonify(message="Success"),201
         else:
             return jsonify(error="Some error occured"),400
-            
-        return jsonify(message="You requested data {}".format(data))
-
+    
 @app.errorhandler(404)
 def not_found(error):
-    return jsonify(error="You entered the wrong Address"),404
+    return jsonify(error="You requested something that does not exist!"),404
 
 if __name__ == "__main__":
     app.run(debug=True)
